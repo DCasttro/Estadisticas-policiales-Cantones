@@ -1,0 +1,297 @@
+---
+title: "Estadísticas Policiales 2021 y Cantones"
+author: "Andrea Padilla Elizondo y Daniela Castro Rivera"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: readable
+    orientation: rows
+---
+
+```{r setup, include=FALSE}
+# Carga de paquetes
+library(dplyr)
+library(sf)
+library(DT)
+library(ggplot2)
+library(plotly)
+library(leaflet)
+library(flexdashboard)
+library(rgdal) 
+library(readxl)
+library(readr)
+library(lubridate)
+library(stringi) 
+```
+
+```{r, carga de datos, include=FALSE}
+# Carga de datos de Datos
+estadisticas_policiales <-
+  readxl::read_excel("estadisticaspoliciales2021.xls")
+```
+
+```{r, trasformacion, include=FALSE}
+# Transformacion de la Fecha
+estadisticas_policiales$Fecha <- as.Date(estadisticas_policiales$Fecha, format = "%d/%m/%Y")
+```
+
+# Parte 1 
+
+Row {data-height=30}
+-----------------------------------------------------------------------
+
+### **Fuente de los datos: [Organismo de Investigación Juficial (OIJ)](https://sitiooij.poder-judicial.go.cr/index.php/ayuda/servicios-policiales/servicios-a-organizaciones/indice-de-transparencia-del-sector-publico-costarricense/datos-abiertos)**
+
+Row {data-height=580}
+-----------------------------------------------------------------------
+
+### Mapa de la Cantidad de Delitos por Cantón de Costa Rica
+```{r, message=FALSE}
+# Lectura
+cantones <-
+  st_read(
+    dsn = "cantones_simplificados.geojson",
+    quiet = TRUE
+  )
+# Transformación
+cantones <-
+  cantones %>%
+  st_transform(5367) %>%
+  st_simplify(dTolerance = 100) %>% 
+  st_transform(4326)
+```
+
+```{r, message=FALSE}
+cantones <-
+  cantones %>%
+  mutate(canton_normalizado = tolower(stri_trans_general(canton, id = "Latin-ASCII")))
+
+delitos <-
+  estadisticas_policiales %>%
+  mutate(canton_normalizado = tolower(stri_trans_general(Canton, id = "Latin-ASCII")))
+```
+
+```{r, include=FALSE}
+delitos %>%
+  left_join(
+    dplyr::select(st_drop_geometry(cantones),
+                  canton_normalizado, cod_canton),
+    by = "canton_normalizado",
+    copy = FALSE,
+    keep = FALSE
+  ) %>%
+  filter(is.na(cod_canton) & canton_normalizado != "desconocido") %>% 
+  distinct(canton_normalizado) 
+```
+
+```{r, include=FALSE}
+delitos <-
+  estadisticas_policiales %>%
+  mutate(Canton = if_else(Canton == "LEON CORTES", "LEON CORTES CASTRO", Canton)) %>%
+  mutate(Canton = if_else(Canton == "VASQUEZ DE CORONADO", "VAZQUEZ DE CORONADO", Canton))
+
+delitos <-
+  estadisticas_policiales %>%
+  mutate(canton_normalizado = tolower(stri_trans_general(Canton, id = "Latin-ASCII")))
+
+delitos %>%
+  left_join(
+    dplyr::select(st_drop_geometry(cantones),
+                  canton_normalizado, cod_canton),
+    by = "canton_normalizado",
+    copy = FALSE,
+    keep = FALSE
+  ) %>%
+  filter(is.na(cod_canton) & canton_normalizado != "desconocido") %>% # los cod_canton = NA son los que no están en el data frame de cantones
+  distinct(canton_normalizado) 
+```
+
+```{r, , message=FALSE}
+delitos <-
+  delitos %>%
+  left_join(
+    dplyr::select(
+      st_drop_geometry(cantones),
+      cod_canton,
+      canton_normalizado
+    ),
+    by = "canton_normalizado",
+    copy = FALSE,
+    keep = FALSE
+  )
+```
+
+```{r, , message=FALSE}
+delitos_x_canton <-
+  delitos %>%
+  count(cod_canton, name = "Delitos")
+
+cantones_delitos <-
+  cantones %>%
+  left_join(
+    delitos_x_canton,
+    by = "cod_canton",
+    copy = FALSE,
+    keep = FALSE
+  )
+
+```
+
+```{r}
+colores_cantones_delitos <-
+  colorNumeric(palette = "Reds",
+               domain = cantones_delitos$delitos,
+               na.color = "transparent")
+```
+
+
+```{r, Mapa leaflet de delitos en cantones}
+leaflet() %>%
+  setView(
+    lng = -84.19452,
+    lat = 9.572735,
+    zoom = 7) %>%
+  addTiles(group = "OpenStreetMap") %>% 
+  addPolygons(
+    data = cantones_delitos,
+    fillColor = ~ colores_cantones_delitos(cantones_delitos$Delitos),
+    fillOpacity = 0.8,
+    color = "black",
+    stroke = TRUE,
+    weight = 1.0,
+    popup = paste(
+      paste(
+        cantones_delitos$canton
+      ),
+      paste(
+        cantones_delitos$Delitos
+      ),
+      sep = 
+    ),
+    group = "Delitos en cantones"
+  ) %>%
+  addLayersControl(
+    # control de capas
+    baseGroups = c("OpenStreetMap"),
+    overlayGroups = c("Delitos en cantones")
+  ) %>%
+  addLegend(
+    position = "bottomleft",
+    pal = colores_cantones_delitos,
+    values = cantones_delitos$Delitos,
+    group = "Delitos",
+    title = "Cantidad de delitos"
+  )
+```
+
+### Gráfico de Cantidad de Delitos por Tipo 
+
+```{r}
+grafico_estadisticas_portipo <-
+estadisticas_policiales %>%
+count(Delito) %>%
+ggplot(aes(x = reorder(Delito, n), y = n)) +
+geom_bar(stat = "identity") +
+ggtitle("") +
+xlab("Tipo") +
+ylab("Cantidad de Delito") +
+coord_flip() + 
+theme_minimal()
+
+ggplotly(grafico_estadisticas_portipo)
+```
+
+Row {data-height=390}
+-----------------------------------------------------------------------
+
+### Gráfico de Cantidad de Delitos por Víctima
+
+```{r}
+grafico_cantidadxvíctima <-
+estadisticas_policiales %>%
+count(Victima) %>%
+ggplot(aes(x = reorder(Victima, n), y = n)) +
+geom_bar(stat = "identity") +
+ggtitle("") +
+xlab("Víctima") +
+ylab("Cantidad de Delito") +
+theme_minimal()
+
+ggplotly(grafico_cantidadxvíctima)
+```
+
+
+# Parte 2
+Row {data-height=560}
+-----------------------------------------------------------------------
+
+### Tabla de las Estadisticas policiales del 2021 en Costa Rica
+
+```{r}
+estadisticas_policiales %>%
+  dplyr::select(Delito,
+                Fecha,
+                Victima,
+                Edad,
+                Genero,
+                Provincia,
+                Canton) %>%
+  datatable(
+    colnames = c(
+      "Delito",
+      "Fecha",
+      "Víctima",
+      "Edad",
+      "Género",
+      "Provincia",
+      "Cantón"
+    ),
+    options = list(
+      pageLength = 5,
+      language = list(url = '//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json')
+    )
+  )
+```
+
+Row {data-height=400}
+-----------------------------------------------------------------------
+
+### Gráfico de Cantidad de Delitos por Mes
+
+```{r}
+estadistica_pormes <- estadisticas_policiales %>% mutate(fecha_mes = lubridate::month(Fecha)) 
+nombres_estadisca <- c("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre")
+```
+
+```{r, grafico por mes}
+grafico_delito_mes <-
+estadistica_pormes %>%
+count(fecha_mes) %>%
+ggplot(level = levelorder, (aes(x = reorder(nombres_estadisca, fecha_mes), y = n))) +
+geom_bar(stat = "identity") +
+ggtitle("") +
+xlab("Mes del año") +
+ylab("Cantidad de Delito") +
+coord_flip() + 
+theme_minimal( )
+
+ggplotly (grafico_delito_mes)
+
+```
+
+### Gráfico de Proporciones del Delito según el Género
+
+```{r}
+barra_proporcion_genero <-
+  estadisticas_policiales %>%
+  ggplot(aes(x = Delito, fill = Genero)) +
+  geom_bar(position = "fill") +
+  ggtitle("") +
+  xlab("Delito") +
+  ylab("Proporciones") +
+  labs(fill = "Género") +
+  coord_flip() + 
+  theme_minimal()
+ggplotly(barra_proporcion_genero) 
+
+```
+
