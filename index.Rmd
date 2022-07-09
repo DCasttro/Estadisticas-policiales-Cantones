@@ -36,7 +36,7 @@ estadisticas_policiales$Fecha <- as.Date(estadisticas_policiales$Fecha, format =
 
 # Parte 1 
 
-Row {data-height=30}
+Row {data-height=20}
 -----------------------------------------------------------------------
 
 ### **Fuente de los datos: [Organismo de Investigación Juficial (OIJ)](https://sitiooij.poder-judicial.go.cr/index.php/ayuda/servicios-policiales/servicios-a-organizaciones/indice-de-transparencia-del-sector-publico-costarricense/datos-abiertos)**
@@ -200,7 +200,7 @@ theme_minimal()
 ggplotly(grafico_estadisticas_portipo)
 ```
 
-Row {data-height=390}
+Row {data-height=400}
 -----------------------------------------------------------------------
 
 ### Gráfico de Cantidad de Delitos por Víctima
